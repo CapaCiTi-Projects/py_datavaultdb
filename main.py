@@ -47,12 +47,15 @@ class Application (tk.Tk):
                 row=1, column=0, ipady="8", sticky="NSEW")
 
             # Set subheader_frame to have 8 columns.
-            for col in range(8):
+            for col in range(12):
                 self.subheader_frame.columnconfigure(index=col, weight=1)
 
         # Create container for actual tabs.
-        self.tab_container = tk.Frame(self)
+        self.tab_container = tk.Frame(self, bg="#fff")
         self.tab_container.grid(row=2, column=0, sticky="NSEW")
+        # Set tab_container 0 index row & column to weight of 1
+        self.tab_container.rowconfigure(index=0, weight=1)
+        self.tab_container.columnconfigure(index=0, weight=1)
 
         self.tab_buttons = []
         for idx, tab in enumerate(self.tabs):
@@ -63,11 +66,11 @@ class Application (tk.Tk):
 
                 self.tab_buttons.append(t)
                 self.tab_buttons[idx].grid(ipadx=10, ipady=5, sticky="NSEW",
-                                           row=0, column=(4 - math.floor(len(self.tabs) / 2) + idx),
+                                           row=0, column=(6 - math.floor(len(self.tabs) / 2) + idx),
                                            columnspan=(len(self.tabs) % 2 + 1))
 
             # Create tab frames
-            self.tabs[idx] = tab(master=self.tab_container)
+            self.tabs[idx] = tab(master=self.tab_container, bg="#ff0")
             self.tabs[idx].grid(row=0, column=0, sticky="NSEW")
 
     def set_tab(self, frame_idx):
@@ -100,6 +103,8 @@ class StatsFrame(tk.Frame):
 
     def __init__(self, *args, **kwargs):
         tk.Frame.__init__(self, *args, **kwargs)
+        self.rowconfigure(index=0, weight=1)
+        self.columnconfigure(index=0, weight=1)
 
         f = self.get_plot_data()
         self.plt_show(f)
@@ -108,6 +113,11 @@ class StatsFrame(tk.Frame):
         """Method to add the matplotlib graph onto a tkinter window."""
         canvas = FigureCanvasTkAgg(f, self)
         canvas.draw()
+
+        for ax in f.get_axes():
+            for tick in ax.get_xticklabels():
+                tick.set_rotation(35)
+
         self.plot_widget = canvas.get_tk_widget()
         self.plot_widget.grid(row=0, column=0, sticky="NSEW")
 
@@ -118,9 +128,12 @@ class StatsFrame(tk.Frame):
 
         # Create the matplotlib figure and axes that will be used to display the graphs for the statistics.
         fig = Figure(figsize=(15, 5), dpi=100)
+
         ax1 = fig.add_subplot(1, 3, 1)
         ax2 = fig.add_subplot(1, 3, 2)
         ax3 = fig.add_subplot(1, 3, 3)
+
+        fig.subplots_adjust(bottom=.25)
 
         # Create different statistics and plot them the figure previously defined.
         products_df.groupby(["Category"]).size().plot(ax=ax1, y="Stock Available", kind="bar", grid=True,
