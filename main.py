@@ -14,6 +14,9 @@ import tkinter.font as tkfont
 import tkinter.filedialog
 
 
+matplotlib.use("TkAgg")
+
+
 class Application (tk.Tk):
     def __init__(self):
         tk.Tk.__init__(self)
