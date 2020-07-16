@@ -1,7 +1,7 @@
-from collections import OrderedDict
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
-from pandastable import Table
+from pandas.errors import ParserError
+from pandastable import Table, TableModel
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -11,16 +11,24 @@ import os.path
 import pandas as pd
 import tkinter as tk
 import tkinter.font as tkfont
-import tkinter.filedialog
+import tkinter.messagebox as tkMessageBox
+import tkinter.filedialog as tkFileDialog
 
 
 matplotlib.use("TkAgg")
 
 
+class DataStore(object):
+    host = "localhost"
+    user="root"
+    passwd = "2ZombiesEatBrains?"
+    data = pd.DataFrame()
+
+
 class Application (tk.Tk):
     def __init__(self):
         tk.Tk.__init__(self)
-        self.configure(background="#fff")
+        DataStore.data = get_db_data()
 
         self.fonts = {
             "title": tkfont.Font(family="Lucida Grande", size=24)
@@ -73,14 +81,14 @@ class Application (tk.Tk):
                                            columnspan=(len(self.tabs) % 2 + 1))
 
             # Create tab frames
-            self.tabs[idx] = tab(master=self.tab_container, bg="#ff0")
+            self.tabs[idx] = tab(master=self.tab_container)
             self.tabs[idx].grid(row=0, column=0, sticky="NSEW")
 
     def set_tab(self, frame_idx):
         for idx, _ in enumerate(self.tab_buttons):
             if idx == frame_idx:
                 self.tab_buttons[idx]["state"] = "disabled"
-                self.tabs[idx].tkraise()
+                self.tabs[idx].show()
             else:
                 self.tab_buttons[idx]["state"] = "normal"
 
@@ -90,15 +98,97 @@ class DataFrame(tk.Frame):
 
     def __init__(self, *args, **kwargs):
         tk.Frame.__init__(self, *args, **kwargs)
+        self.columnconfigure(index=0, weight=1)
+        self.rowconfigure(index=1, weight=1)
+
         self.create_widgets()
 
-    def create_widgets(self):
-        df_cols, db_data = get_db_data()
-        data_df = pd.DataFrame(db_data, columns=df_cols).set_index("ID")
+    def show(self):
+        self.tkraise()
 
-        self.data_table = Table(self, dataframe=data_df)
+    def create_widgets(self):
+        # Create buttons to manage the DB.
+        self.toolbar = tk.Frame(self)
+        self.toolbar.grid(row=0, column=0, padx=12, pady=3, sticky="NSEW")
+        for col in range(12):
+            self.toolbar.columnconfigure(index=col, weight=1)
+
+        self.save_button = tk.Button(
+            self.toolbar, text="Save Data To DB", command=self.save_to_db)
+        self.export_button = tk.Button(
+            self.toolbar, text="Export Data to File", command=self.export_data)
+        self.import_button = tk.Button(
+            self.toolbar, text="Import Data from CSV", command=self.import_csv)
+        self.refresh_button = tk.Button(
+            self.toolbar, text="Refresh Data from DB", command=self.refresh_table_data)
+
+        self.save_button.grid(row=0, column=12)
+        self.export_button.grid(row=0, column=11)
+        self.import_button.grid(row=0, column=10)
+        self.refresh_button.grid(row=0, column=9)
+
+        self.table_container = tk.Frame(self)
+        self.table_container.grid(row=1, column=0, sticky="NSEW")
+        # Create table to display data
+        data_df = DataStore.data
+
+        self.data_table = Table(self.table_container, dataframe=data_df)
         self.data_table.autoResizeColumns()
         self.data_table.show()
+
+    def refresh_table_data(self):
+        res = tkMessageBox.askyesno(title="Are you sure you want to refresh the DB.",
+                                    message="Are you sure that you want to refresh the DB.\n"
+                                    "This will undo any changes that you made before saving your data. This includes CSV file that you have imported")
+
+        if res == tkMessageBox.NO:
+            return
+
+        data_df = get_db_data()
+
+        DataStore.data = data_df
+        self.data_table.updateModel(TableModel(data_df))
+        self.data_table.redraw()
+
+    def export_data(self):
+        output_file = tkFileDialog.askopenfilename()
+        if not output_file:
+            tkMessageBox.showerror(title="Export Failed",
+                                   message="Export failed as no file was selected.")
+            return
+
+    def save_to_db(self):
+        add_df_to_db(DataStore.data)
+
+    def import_csv(self):
+        # Get file to import
+        input_file = tkFileDialog.askopenfilename()
+        if not input_file.strip():
+            tkMessageBox.showerror(title="Import Failed",
+                                   message="Import failed as no file was selected.")
+            return
+
+        try:
+            import_df = pd.read_csv(input_file)
+        except ParserError:
+            tkMessageBox.showerror(
+                "The supplied file is not a valid CSV file, could not import.")
+
+        if len(import_df) > 0:
+            # Data was loaded.
+            DataStore.data.reset_index(level=["id_product"], inplace=True)
+            table_df = DataStore.data.append(import_df, ignore_index=False)
+            table_df.set_index("id_product", inplace=True)
+
+            DataStore.data = table_df
+            self.data_table.updateModel(TableModel(table_df))
+            self.data_table.redraw()
+
+            tkMessageBox.showinfo(title="Import Successful",
+                                  message="Import Completed Successfully!")
+        else:
+            tkMessageBox.showinfo(title="Import Failed",
+                                  message="Input file did not have any CSV data so no data was added.")
 
 
 class StatsFrame(tk.Frame):
@@ -106,11 +196,18 @@ class StatsFrame(tk.Frame):
 
     def __init__(self, *args, **kwargs):
         tk.Frame.__init__(self, *args, **kwargs)
+
         self.rowconfigure(index=0, weight=1)
         self.columnconfigure(index=0, weight=1)
 
         f = self.get_plot_data()
         self.plt_show(f)
+
+    def show(self):
+        f = self.get_plot_data()
+        self.plt_show(f)
+
+        self.tkraise()
 
     def plt_show(self, f):
         """Method to add the matplotlib graph onto a tkinter window."""
@@ -126,8 +223,8 @@ class StatsFrame(tk.Frame):
 
     def get_plot_data(self):
         # Get a data from DB and import into pandas.DataFrame
-        df_cols, db_data = get_db_data()
-        products_df = pd.DataFrame(db_data, columns=df_cols).set_index("ID")
+        DataStore.data = get_db_data()
+        products_df = DataStore.data
 
         # Create the matplotlib figure and axes that will be used to display the graphs for the statistics.
         fig = Figure(figsize=(15, 5), dpi=100)
@@ -139,11 +236,11 @@ class StatsFrame(tk.Frame):
         fig.subplots_adjust(bottom=.25)
 
         # Create different statistics and plot them the figure previously defined.
-        products_df.groupby(["Category"]).size().plot(ax=ax1, y="Stock Available", kind="bar", grid=True,
+        products_df.groupby(["category"]).size().plot(ax=ax1, y="stock_available", kind="bar", grid=True,
                                                       title="Number of Items per Category")
-        products_df.groupby(["Category"]).sum().plot(ax=ax2, y="Stock Available", kind="bar", grid=True,
+        products_df.groupby(["category"]).sum().plot(ax=ax2, y="stock_available", kind="bar", grid=True,
                                                      title="Total Number of Products per Category")
-        products_df.groupby(["Category"]).mean().plot(ax=ax3, y="Stock Available", kind="bar", grid=True,
+        products_df.groupby(["category"]).mean().plot(ax=ax3, y="stock_available", kind="bar", grid=True,
                                                       title="Average Price of Products in Category")
 
         return fig
@@ -152,17 +249,72 @@ class StatsFrame(tk.Frame):
 def get_db_data():
     """ Method to get the data from the database and return it as a tuple consisting
     of a list of the names of the columns and a list of the actualy data in tuple format."""
-    db = MySQLdb.connect("localhost", "root", "2ZombiesEatBrains?")
-    cursor = db.cursor()
+    con = MySQLdb.connect(host=DataStore.host, user=DataStore.user,
+                          passwd=DataStore.passwd, database="sprint_datavault")
+    cursor = con.cursor()
 
     cols = [
-        "ID", "Name", "Category", "Stock Available", "Selling Price", "Description"
+        "id_product", "name", "category", "stock_available", "selling_price"
     ]
 
-    cursor.execute("SELECT * FROM sprint_datavault.products")
+    # Create the table if it doesn't already exist. This will allow it to work in any DB.
+    cursor.execute("""CREATE TABLE IF NOT EXISTS `products` (
+        id_product VARCHAR(12) NOT NULL PRIMARY KEY,
+        name VARCHAR(60) NOT NULL,
+        category VARCHAR(60) NOT NULL,
+        stock_available INT UNSIGNED NOT NULL DEFAULT 0,
+        selling_price DECIMAL(13,2) UNSIGNED NOT NULL DEFAULT 0.00
+    ) ENGINE=InnoDB""")
+
+    cursor.execute(
+        f"SELECT {','.join(cols)} FROM products")
     data = cursor.fetchall()
-    db.close()
-    return cols, data
+    con.close()
+
+    data_df = pd.DataFrame(data, columns=cols).set_index(
+        "id_product")
+    return data_df
+
+
+def add_df_to_db(df):
+    con = MySQLdb.connect(host=DataStore.host, user=DataStore.user,
+                          passwd=DataStore.passwd, database="sprint_datavault")
+    cursor = con.cursor()
+
+    # Firstly, get original dataframe, using get_db_data()
+    left_df = get_db_data()
+
+    # Then, compare the the two and only take the ones that have differences
+    out_df = left_df.merge(df, how="outer", indicator="shared")
+    out_df = out_df[out_df["shared"] != "both"]
+
+    out_df.drop(["shared"], axis=1, inplace=True)
+    # out_df.reset_index(level=0, inplace=True)
+    out_df["id_product"] = out_df.index
+
+    return
+
+    if len(out_df) == 0:
+        tkMessageBox.showinfo(title="DataBase Update Complete",
+                              message="Nothing was added to the DB as no changes were detected between the different datasets.")
+        return
+
+    cols = "`,`".join([str(i) for i in out_df.columns.tolist()])
+    for _, row in out_df.iterrows():
+    sql = "INSERT INTO `products` (`" + cols + \
+        "`) VALUES (" + "%s," * (len(row)-1) + "%s)"
+
+    try:
+        cursor.executemany(sql, tuple(map(out_df.iterrows())))
+        con.commit()
+        tkMessageBox.showinfo(title="Save Successful",
+                                message="Save Completed Successfully!")
+    except:
+        con.rollback()
+        tkMessageBox.showerror(title="Save Failed",
+                                message="The data was not saved to the DB.")
+
+    con.close()
 
 
 app = Application()
