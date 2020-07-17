@@ -300,12 +300,13 @@ def add_df_to_db(df):
         return
 
     cols = "`,`".join([str(i) for i in out_df.columns.tolist()])
-    for _, row in out_df.iterrows():
+    # for _, row in out_df.iterrows():
     sql = "INSERT INTO `products` (`" + cols + \
         "`) VALUES (" + "%s," * (len(row)-1) + "%s)"
 
     try:
-        cursor.executemany(sql, tuple(map(out_df.iterrows())))
+        cursor.executemany(sql, tuple(map(lambda _,row: ,
+            out_df.iterrows())))
         con.commit()
         tkMessageBox.showinfo(title="Save Successful",
                                 message="Save Completed Successfully!")
