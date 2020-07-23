@@ -6,7 +6,7 @@ from pandastable import Table, TableModel
 import matplotlib
 import matplotlib.pyplot as plt
 import math
-import MySQLdb
+import mysql.connector
 import os.path
 import pandas as pd
 import tkinter as tk
@@ -20,7 +20,7 @@ matplotlib.use("TkAgg")
 
 class DataStore(object):
     host = "localhost"
-    user="root"
+    user = "root"
     passwd = "2ZombiesEatBrains?"
     data = pd.DataFrame()
 
@@ -223,7 +223,7 @@ class StatsFrame(tk.Frame):
 
     def get_plot_data(self):
         # Get a data from DB and import into pandas.DataFrame
-        DataStore.data = get_db_data()
+        # DataStore.data = get_db_data()
         products_df = DataStore.data
 
         # Create the matplotlib figure and axes that will be used to display the graphs for the statistics.
@@ -249,7 +249,7 @@ class StatsFrame(tk.Frame):
 def get_db_data():
     """ Method to get the data from the database and return it as a tuple consisting
     of a list of the names of the columns and a list of the actualy data in tuple format."""
-    con = MySQLdb.connect(host=DataStore.host, user=DataStore.user,
+    con = mysql.connector.connect(host=DataStore.host, user=DataStore.user,
                           passwd=DataStore.passwd, database="sprint_datavault")
     cursor = con.cursor()
 
@@ -277,12 +277,15 @@ def get_db_data():
 
 
 def add_df_to_db(df):
-    con = MySQLdb.connect(host=DataStore.host, user=DataStore.user,
+    con = mysql.connector.connect(host=DataStore.host, user=DataStore.user,
                           passwd=DataStore.passwd, database="sprint_datavault")
     cursor = con.cursor()
 
     # Firstly, get original dataframe, using get_db_data()
     left_df = get_db_data()
+
+    df = df.reset_index(level=["id_product"])
+    left_df = left_df.reset_index(level=["id_product"])
 
     # Then, compare the the two and only take the ones that have differences
     out_df = left_df.merge(df, how="outer", indicator="shared")
@@ -290,9 +293,6 @@ def add_df_to_db(df):
 
     out_df.drop(["shared"], axis=1, inplace=True)
     # out_df.reset_index(level=0, inplace=True)
-    out_df["id_product"] = out_df.index
-
-    return
 
     if len(out_df) == 0:
         tkMessageBox.showinfo(title="DataBase Update Complete",
@@ -302,18 +302,23 @@ def add_df_to_db(df):
     cols = "`,`".join([str(i) for i in out_df.columns.tolist()])
     # for _, row in out_df.iterrows():
     sql = "INSERT INTO `products` (`" + cols + \
-        "`) VALUES (" + "%s," * (len(row)-1) + "%s)"
+        "`) VALUES (" + "%s," * (len(out_df.columns)-1) + "%s)"
 
-    try:
-        cursor.executemany(sql, tuple(map(lambda _,row: ,
-            out_df.iterrows())))
-        con.commit()
-        tkMessageBox.showinfo(title="Save Successful",
-                                message="Save Completed Successfully!")
-    except:
-        con.rollback()
-        tkMessageBox.showerror(title="Save Failed",
-                                message="The data was not saved to the DB.")
+    # try:
+    print(out_df)
+    sql_data = []
+    for _, row in out_df.iterrows():
+        print(list(row))
+        sql_data.append(tuple(row))
+
+    cursor.executemany(sql, tuple(sql_data))
+    con.commit()
+    tkMessageBox.showinfo(title="Save Successful",
+                          message="Save Completed Successfully!")
+    # except:
+    #     con.rollback()
+    #     tkMessageBox.showerror(title="Save Failed",
+    #                             message="The data was not saved to the DB.")
 
     con.close()
 
